@@ -1,0 +1,17 @@
+# Secrets. broker/.env holds the client secrets; .env holds public build values.
+.env
+broker/.env
+
+# Build output
+dist/
+broker/dist/
+
+# Dependencies
+node_modules/
+
+# esbuild's staging cache for the manifest module
+node_modules/.cache/
+
+# Editor and OS noise
+.DS_Store
+*.log
