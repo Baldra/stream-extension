@@ -11,6 +11,9 @@ import {
 } from './tokens';
 import { AuthError, type AccountCredentials, type ProviderId } from './provider';
 import type { PersistedAccount } from './state';
+import { createLogger } from './logging';
+
+const logger = createLogger('accounts');
 
 export interface BrokerClient {
   /** Exchanges an authorization code. Sends the PKCE verifier; never a secret. */
@@ -90,12 +93,21 @@ export class AccountManager {
    * (task 5.2) -- the attempt is simply not found and discarded.
    */
   async completeConnect(input: { state: string | null | undefined; code?: string }): Promise<ConnectResult> {
+    logger.debug('completeConnect called', { hasState: Boolean(input.state), hasCode: Boolean(input.code) });
     const attempt = this.sessions.consume(input.state);
-    if (!attempt) return { ok: false, error: 'authorization state did not match; nothing was connected' };
-    if (!input.code) return { ok: false, error: 'no authorization code was returned' };
+    if (!attempt) {
+      logger.error('completeConnect: no attempt found for state');
+      return { ok: false, error: 'authorization state did not match; nothing was connected' };
+    }
+    logger.debug('attempt consumed', { providerId: attempt.providerId });
+    if (!input.code) {
+      logger.error('completeConnect: no authorization code');
+      return { ok: false, error: 'no authorization code was returned' };
+    }
 
     let tokens: Awaited<ReturnType<BrokerClient['exchange']>>;
     try {
+      logger.debug('calling broker.exchange', { providerId: attempt.providerId });
       tokens = await this.deps.broker.exchange({
         provider: attempt.providerId,
         code: input.code,
@@ -103,7 +115,9 @@ export class AccountManager {
         // The verifier goes to the broker; the extension has no secret to send.
         ...(attempt.codeVerifier ? { codeVerifier: attempt.codeVerifier } : {}),
       });
-    } catch {
+      logger.debug('broker.exchange succeeded', { providerId: attempt.providerId });
+    } catch (err) {
+      logger.error('broker.exchange failed', { providerId: attempt.providerId, err });
       return { ok: false, error: 'the platform rejected the authorization code' };
     }
 
@@ -113,8 +127,11 @@ export class AccountManager {
     // the account still needs a stable id, so a random one stands in.
     let identity: AccountIdentity = {};
     try {
+      logger.debug('identifying account', { providerId: attempt.providerId });
       identity = (await this.deps.identify?.(attempt.providerId, credentials)) ?? {};
-    } catch {
+      logger.debug('identify result', { hasProviderUserId: Boolean(identity.providerUserId) });
+    } catch (err) {
+      logger.warn('identify failed', { providerId: attempt.providerId, err });
       identity = {};
     }
 
@@ -130,6 +147,7 @@ export class AccountManager {
       ...(identity.providerUserId ? { providerUserId: identity.providerUserId } : {}),
     };
 
+    logger.debug('account stored', { providerId: account.providerId, accountId: account.accountId });
     await this.deps.repository.putAccount(account);
     return { ok: true, account };
   }

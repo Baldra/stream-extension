@@ -1,17 +1,20 @@
 import { createBroker } from './index';
 import { ConfigError, loadConfig } from './config';
+import { createLogger } from './logging';
+
+const logger = createLogger('server');
 
 try {
   const config = loadConfig();
   const broker = createBroker({ config });
   const port = await broker.listen();
-  console.log(`token-broker listening on :${port}`);
-  console.log(`providers: ${Object.keys(config.providers).join(', ')}`);
+  logger.info(`token-broker listening on :${port}`);
+  logger.info(`providers: ${Object.keys(config.providers).join(', ')}`);
 } catch (error) {
   if (error instanceof ConfigError) {
-    console.error(`configuration error: ${error.message}`);
+    logger.error(`configuration error: ${error.message}`);
   } else {
-    console.error('broker failed to start');
+    logger.error('broker failed to start');
   }
   process.exit(1);
 }

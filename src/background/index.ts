@@ -11,6 +11,8 @@ import { TwitchAdapter } from '../providers/twitch/adapter';
 import { createHttpClient } from '../core/http';
 import { BUILD_CONFIG } from '../manifest';
 import { createBrokerHttpClient } from './broker-client';
+import { createLogger } from '../core/logging';
+
 import { NotificationService, type NotificationApi } from '../core/notifications';
 import { ChannelTracker } from '../core/tracking';
 import { registerMessageApi, type MessageApiDeps } from './messages';
@@ -22,6 +24,7 @@ import { registerMessageApi, type MessageApiDeps } from './messages';
  * terminated at any point; only the repository's contents survive. That is why the
  * detection engine persists its decisions instead of holding them in memory.
  */
+const logger = createLogger('background');
 const http = createHttpClient(fetch, BUILD_CONFIG.twitchClientId);
 
 const twitch = new TwitchAdapter({
@@ -235,17 +238,30 @@ registerMessageApi(chrome as unknown as Parameters<typeof registerMessageApi>[0]
   connectAccount: async (providerId, existingAccountId) => {
     // Reconnecting reuses the stored account id, so its tracked channels and live
     // state survive the new authorization instead of starting over.
+    logger.debug('connectAccount called', { providerId, hasExisting: Boolean(existingAccountId) });
     const existing = existingAccountId
       ? await repository.account(providerId, existingAccountId)
       : undefined;
-    const { url } = await accounts.beginConnect(providerId, existing?.providerUserId);
+    const { url, state } = await accounts.beginConnect(providerId, existing?.providerUserId);
+    logger.debug('beginConnect ok', { providerId, state });
     const redirect = await chrome.identity.launchWebAuthFlow({ url, interactive: true });
+    logger.debug('launchWebAuthFlow result', { hasRedirect: Boolean(redirect) });
     if (!redirect) throw new Error('Authorization did not complete');
     const params = new URL(redirect).searchParams;
+    const code = params.get('code');
+    const returnedState = params.get('state');
+    const error = params.get('error');
+    logger.debug('redirect params', { hasCode: Boolean(code), hasState: Boolean(returnedState), error });
+    if (error && !code) {
+      const msg = `Kick authorization failed: ${error}`;
+      logger.error(msg, { error });
+      throw new Error(msg);
+    }
     await accounts.completeConnect({
-      state: params.get('state') ?? undefined,
-      code: params.get('code') ?? undefined,
+      state: returnedState ?? undefined,
+      code: code ?? undefined,
     });
+    logger.debug('connectAccount complete', { providerId });
   },
 } satisfies MessageApiDeps);
 

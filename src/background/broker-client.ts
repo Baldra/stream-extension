@@ -1,5 +1,8 @@
 import type { BrokerClient } from '../core/accounts';
 import { TokenRefreshError } from '../core/tokens';
+import { createLogger } from '../core/logging';
+
+const logger = createLogger('broker-client');
 
 /**
  * The extension's only channel to the token broker.
@@ -44,6 +47,7 @@ export function createBrokerHttpClient(options: BrokerHttpOptions): BrokerClient
   const timeoutMs = options.timeoutMs ?? 10_000;
 
   async function post<T>(path: string, body: Record<string, unknown>): Promise<T> {
+    logger.debug('post', { provider: body.provider, path });
     let response: Response;
     try {
       response = await doFetch(`${baseUrl.replace(/\/$/, '')}${path}`, {
@@ -52,25 +56,25 @@ export function createBrokerHttpClient(options: BrokerHttpOptions): BrokerClient
         body: JSON.stringify(body),
         signal: AbortSignal.timeout(timeoutMs),
       });
-    } catch {
+    } catch (err) {
+      logger.error('post failed', { provider: body.provider, path, err });
       throw opaque(String(body.provider ?? ''), 'broker_unreachable');
     }
 
     let envelope: BrokerEnvelope<T>;
     try {
       envelope = (await response.json()) as BrokerEnvelope<T>;
-    } catch {
+    } catch (err) {
+      logger.error('invalid response', { provider: body.provider, path, err });
       throw opaque(String(body.provider ?? ''), 'broker_invalid_response');
     }
 
     if (!response.ok || !envelope?.ok) {
-      // The broker forwards the platform's own OAuth error code, which is what
-      // distinguishes a revoked grant from a momentary failure.
-      throw opaque(
-        String(body.provider ?? ''),
-        String(envelope?.oauthError ?? envelope?.error ?? 'broker_error'),
-      );
+      const reason = String(envelope?.oauthError ?? envelope?.error ?? 'broker_error');
+      logger.error('broker error', { provider: body.provider, path, reason });
+      throw opaque(String(body.provider ?? ''), reason);
     }
+    logger.debug('post ok', { provider: body.provider, path });
     return (envelope.data ?? (envelope as unknown)) as T;
   }
 

@@ -15,8 +15,8 @@ export const OAUTH_ENDPOINTS: Record<string, string> = {
  * Requesting more would violate least privilege.
  */
 export const REQUIRED_SCOPES: Record<string, string[]> = {
-  twitch: ['user:read:follows'],
-  kick: [],
+  twitch: ["user:read:follows"],
+  kick: ["user:read channel:read"],
 };
 
 export interface AuthorizationRequestInput {
@@ -41,8 +41,9 @@ export function buildAuthorizationUrl(input: AuthorizationRequestInput): string 
   url.searchParams.set('state', input.state);
 
   const scopes = REQUIRED_SCOPES[input.providerId] ?? [];
-  if (scopes.length > 0) url.searchParams.set('scope', scopes.join(' '));
-  else url.searchParams.set('scope', '');
+  if (scopes.length > 0) {
+    url.searchParams.set('scope', scopes.join(' '));
+  }
 
   if (input.codeChallenge) {
     url.searchParams.set('code_challenge', input.codeChallenge);

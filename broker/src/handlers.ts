@@ -1,3 +1,5 @@
+import { createLogger } from './logging';
+const logger = createLogger('handlers');
 import type { BrokerConfig } from './config';
 import { resolveProvider, type ExchangeInput } from './providers';
 
@@ -103,6 +105,7 @@ export async function exchangeAuthorizationCode(
 
   const provider = resolveProvider(input.provider, deps.config);
   if (!provider) {
+    logger.error('unknown provider', { provider: input.provider });
     return fail('unknown_provider', 'provider is not registered', input.provider);
   }
 
@@ -121,23 +124,25 @@ export async function exchangeAuthorizationCode(
 
   let response: Response;
   try {
+    logger.debug('exchanging code', { provider: provider.id });
     response = await deps.fetch(provider.tokenEndpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams(params).toString(),
     });
-  } catch {
-    // Deliberately opaque: the request may have carried a code, so no platform
-    // detail is echoed back.
+  } catch (err) {
+    logger.error('exchange failed', { provider: provider.id, err });
     return fail('platform_unavailable', 'token endpoint is unreachable', provider.id);
   }
 
   if (!response.ok) {
+    const oauthErr = await oauthErrorOf(response);
+    logger.error('platform rejected exchange', { provider: provider.id, status: response.status, oauthErr });
     return fail(
       'platform_rejected',
       `platform rejected the exchange (${response.status})`,
       provider.id,
-      await oauthErrorOf(response),
+      oauthErr,
     );
   }
 
@@ -146,6 +151,8 @@ export async function exchangeAuthorizationCode(
     return fail('platform_rejected', 'token endpoint returned no access token', provider.id);
   }
 
+  logger.debug('exchange ok', { provider: provider.id });
+  logger.debug('refresh ok', { provider: provider.id });
   return { ok: true, provider: provider.id, data };
 }
 
@@ -179,21 +186,25 @@ export async function refreshAccessToken(
 
   let response: Response;
   try {
+    logger.debug('refreshing token', { provider: provider.id });
     response = await deps.fetch(provider.tokenEndpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams(params).toString(),
     });
-  } catch {
+  } catch (err) {
+    logger.error('refresh failed', { provider: provider.id, err });
     return fail('platform_unavailable', 'token endpoint is unreachable', provider.id);
   }
 
   if (!response.ok) {
+    const oauthErr = await oauthErrorOf(response);
+    logger.error('platform rejected refresh', { provider: provider.id, status: response.status, oauthErr });
     return fail(
       'platform_rejected',
       `platform rejected the renewal (${response.status})`,
       provider.id,
-      await oauthErrorOf(response),
+      oauthErr,
     );
   }
 
@@ -202,6 +213,8 @@ export async function refreshAccessToken(
     return fail('platform_rejected', 'token endpoint returned no access token', provider.id);
   }
 
+  logger.debug('exchange ok', { provider: provider.id });
+  logger.debug('refresh ok', { provider: provider.id });
   return { ok: true, provider: provider.id, data };
 }
 
@@ -224,6 +237,7 @@ export async function revokeToken(
   if (!input.token) return fail('invalid_request', 'missing token', provider.id);
 
   try {
+    logger.debug('revoking token', { provider: provider.id });
     const response = await deps.fetch(provider.tokenEndpoint, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -233,12 +247,15 @@ export async function revokeToken(
       }).toString(),
     });
     if (!response.ok) {
+      logger.error('platform rejected revoke', { provider: provider.id, status: response.status });
       return fail('platform_rejected', `platform rejected the revocation (${response.status})`, provider.id);
     }
-  } catch {
+  } catch (err) {
+    logger.error('revoke failed', { provider: provider.id, err });
     return fail('platform_unavailable', 'token endpoint is unreachable', provider.id);
   }
 
+  logger.debug('revoke ok', { provider: provider.id });
   return { ok: true, provider: provider.id, data: { revoked: true } };
 }
 

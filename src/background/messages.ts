@@ -11,6 +11,9 @@ import type { PlatformSummary } from '../popup/view';
 import { fetchUnofficialFollows } from '../providers/kick/unofficial-import';
 import { UnofficialImportUnavailableError, messageForUnofficialImport } from '../core/unofficial-import';
 import type { Clock } from '../core/clock';
+import { createLogger } from '../core/logging';
+
+const logger = createLogger('messages');
 
 /**
  * The worker's half of the popup protocol.
@@ -200,6 +203,7 @@ export async function handleDashboardRequest(
     }
     return { ok: true };
   } catch (error) {
+    logger.error('handleDashboardRequest failed', { error: error instanceof Error ? error.message : error });
     // An unofficial failure always reads as "unavailable, nothing changed", so a
     // user is never told a tracked channel was lost.
     if (error instanceof UnofficialImportUnavailableError) {

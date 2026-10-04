@@ -63,8 +63,8 @@ describe('authorization request (task 5.1)', () => {
       const url = new URL(
         buildAuthorizationUrl({ providerId: provider, clientId: 'c', redirectUri: REDIRECT, state: 's' }),
       );
-      const scope = url.searchParams.get('scope') ?? '';
-      const requested = scope.split(' ').filter(Boolean);
+      const scopeParam = url.searchParams.get('scope');
+      const requested = scopeParam ? scopeParam.split(' ').filter(Boolean) : [];
       expect(requested.sort()).toEqual([...scopesFor(provider)].sort());
     }
   });
@@ -86,7 +86,7 @@ describe('authorization request (task 5.1)', () => {
       buildAuthorizationUrl({ providerId: 'kick', clientId: 'cid', redirectUri: REDIRECT, state: 'st' }),
     );
     expect(`${url.origin}${url.pathname}`).toBe('https://id.kick.com/oauth/authorize');
-    expect(url.searchParams.get('scope')).toBe('');
+    expect(url.searchParams.get('scope')).toBeNull();
   });
 
   it('includes the PKCE challenge when one is supplied', () => {
